@@ -9,14 +9,21 @@ class ChatConsumer(AsyncConsumer):
     print("Consumer-> ChatConsumer")
     async def websocket_connect(self, event):
         print("connected", event)
-        await self.send({
-            "type": "websocket.accept"
-        })
+
         other_user = self.scope['url_route']['kwargs']['username']
         me = self.scope['user']
         print(other_user,me)
         thread_obj = await self.get_thread(me, other_user)
         print(thread_obj)
+        chat_room = f"thread_{thread_obj.id}"
+        self.chat_room = chat_room
+        await self.channel_layer.group_add(
+             chat_room,
+             self.channel_name
+        )
+        await self.send({
+            "type": "websocket.accept"
+        })
 
     async def websocket_receive(self, event):
         print("receive", event)
@@ -24,19 +31,28 @@ class ChatConsumer(AsyncConsumer):
         if front_text is not None:
             loaded_dict_data = json.loads(front_text)
             msg = loaded_dict_data.get('message')
-            print(msg)
             user = self.scope['user']
             username = "default"
             if user.is_authenticated:
                 username = user.username
             myResponse = {
-                 "message": "This is a instant message",
+                 "message": msg,
                  "username": username
             }
-            await self.send({
-                "type": "websocket.send",
-                "text": json.dumps(myResponse)
-            })
+            #broadcast the message event to be sent
+            await self.channel_layer.group_send(
+                 self.chat_room,{
+                      "type": "chat_message",
+                      "text": json.dumps(myResponse)
+                 }
+
+            )
+    async def chat_message(self,event):
+        #send the actual message
+        await self.send({
+                 "type": "websocket.send",
+                 "text":  event['text']
+        })
 
     async def websocket_disconnect(self, event):
         print("disconnected", event)
